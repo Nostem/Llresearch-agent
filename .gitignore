@@ -1,0 +1,23 @@
+# Environment
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Data — raw and cleaned transcripts are large and locally sourced
+data/raw/
+data/cleaned/
+data/chunks/
+
+# Vector store — rebuilt from data during ingest
+embeddings/chroma_store/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

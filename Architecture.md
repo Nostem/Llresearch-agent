@@ -98,19 +98,19 @@ llresearch-agent/
 
 ### Phase 1 — Data Pipeline
 
-- [ ] Scrape all Ra session transcripts from llresearch.org
-- [ ] Clean and normalize formatting
-- [ ] Chunk by Q&A pair with rich metadata
-- [ ] Generate embeddings and store in ChromaDB
-- [ ] Validate retrieval quality with test questions
+- [x] Scrape all Ra session transcripts from llresearch.org (`ingest/scraper.py`)
+- [x] Clean and normalize formatting (`ingest/cleaner.py`)
+- [x] Chunk by Q&A pair with rich metadata (`ingest/chunker.py`)
+- [x] Generate embeddings and store in ChromaDB (`embeddings/embed.py`)
+- [ ] Validate retrieval quality with test questions *(run after first ingest)*
 
 ### Phase 2 — Agent Core
 
-- [ ] Build retriever with semantic + keyword hybrid search
-- [ ] Design the “lens” system prompt (Ra vocabulary, philosophical framing)
-- [ ] Wire retriever → prompt builder → Ollama (Llama 3 8B)
-- [ ] Build FastAPI backend with chat and search endpoints
-- [ ] Iterative evaluation and tuning
+- [x] Build retriever with semantic + keyword hybrid search (`agent/retriever.py`)
+- [x] Design the “lens” system prompt (`agent/lens.py` — v1.0)
+- [x] Wire retriever → prompt builder → Ollama (`agent/prompt_builder.py`, `agent/agent.py`)
+- [x] Build FastAPI backend with chat and search endpoints (`api/`)
+- [ ] Iterative evaluation and tuning *(ongoing after first ingest)*
 
 ### Phase 3 — Interface
 
