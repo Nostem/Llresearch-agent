@@ -5,7 +5,7 @@ Targets the HTML transcript pages for all 106 Ra sessions.
 Saves raw HTML to data/raw/ for downstream cleaning.
 
 URL pattern:
-    https://llresearch.org/channeling/the-law-of-one/session-{n}
+    https://www.llresearch.org/channeling/ra-contact/{n}
 
 The scraper:
   - Respects rate limits (configurable delay between requests)
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BASE_URL = "https://llresearch.org/channeling/the-law-of-one/session-{n}"
+BASE_URL = "https://www.llresearch.org/channeling/ra-contact/{n}"
 TOTAL_SESSIONS = 106
 RAW_DIR = Path("data/raw")
 SCRAPE_DELAY = float(os.getenv("SCRAPE_DELAY", "1.5"))
