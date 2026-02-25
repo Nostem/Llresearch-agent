@@ -76,21 +76,28 @@ def session_to_book(n: int) -> int:
 def extract_date(soup: BeautifulSoup, session_n: int) -> str:
     """
     Try to find the session date in the HTML.
-    llresearch.org pages typically include the date in the header or metadata.
+    The site renders dates in a <time> element or as visible text.
     Falls back to "unknown" if not found.
     """
-    # Common patterns: look for text that matches a date format
-    date_patterns = [
-        r"\b(\w+ \d{1,2},\s*\d{4})\b",     # "January 15, 1981"
-        r"\b(\d{4}-\d{2}-\d{2})\b",          # "1981-01-15"
-    ]
+    # Try a <time> element first (most reliable)
+    time_el = soup.find("time")
+    if time_el:
+        dt = time_el.get("datetime") or time_el.get_text(strip=True)
+        if dt:
+            return dt
 
-    # Search visible text for a date near the top of the document
+    # Search all visible text for a date pattern
+    # The date is typically rendered somewhere on the page after JS loads
     text = soup.get_text()
+    date_patterns = [
+        r"\b(January|February|March|April|May|June|July|August|"
+        r"September|October|November|December)\s+\d{1,2},\s*\d{4}\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+    ]
     for pattern in date_patterns:
-        match = re.search(pattern, text[:2000])  # Look in first ~2000 chars
+        match = re.search(pattern, text)
         if match:
-            return match.group(1)
+            return match.group(0)
 
     return "unknown"
 
@@ -99,161 +106,109 @@ def extract_qa_pairs_from_html(html: str, session_n: int) -> list[dict]:
     """
     Parse Q&A pairs from an llresearch.org session HTML page.
 
-    The site wraps transcript content in identifiable HTML structure.
-    We extract all text, then use the consistent Ra/Questioner pattern
-    to split it into Q&A pairs.
+    The actual DOM structure (confirmed via debug) is:
+      <article id="fountain">
+        <h4 class="speaker">1.0Ra</h4>      ← Ra's opening monologue
+        <p>...</p> ...
+        <h4 class="speaker">1.1Questioner</h4>
+        <p>[question text]</p>
+        <h4 class="speaker">Ra</h4>          ← Ra's answer gets its own h4
+        <p>I am Ra. [answer text]</p>
+        <h4 class="speaker">1.2Questioner</h4>
+        ...
+      </article>
+
+    Strategy:
+      1. Walk all elements in document order, building a list of speaker
+         turns: [(speaker_text, [p_elements]), ...]
+      2. Find consecutive Questioner→Ra turn pairs and combine them.
 
     Returns a list of dicts: [{question_number, question, answer}, ...]
     """
     soup = BeautifulSoup(html, "lxml")
 
-    # Remove navigation, header, footer, script, style elements
     for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
         tag.decompose()
 
-    # Get clean text — preserving newlines between block elements
-    text = soup.get_text(separator="\n")
-    text = _normalize_whitespace(text)
+    all_elements = soup.find_all(["h4", "p"])
 
-    pairs = _parse_qa_pairs(text, session_n)
-
-    if not pairs:
-        # Fallback: the HTML structure might differ — try a simpler split
+    speaker_h4s = [
+        el for el in all_elements
+        if el.name == "h4" and "speaker" in (el.get("class") or [])
+    ]
+    if not speaker_h4s:
         logger.warning(
-            f"Session {session_n:03d}: no Q&A pairs parsed from HTML. "
-            "Trying fallback parser."
+            f"Session {session_n:03d}: no <h4 class='speaker'> elements found. "
+            "Page structure may have changed."
         )
-        pairs = _parse_qa_pairs_fallback(text, session_n)
-
-    return pairs
-
-
-def _normalize_whitespace(text: str) -> str:
-    """Collapse excessive blank lines, normalize whitespace."""
-    # Replace smart quotes and em-dashes with plain ASCII equivalents
-    text = text.replace("\u2018", "'").replace("\u2019", "'")
-    text = text.replace("\u201c", '"').replace("\u201d", '"')
-    text = text.replace("\u2014", "--").replace("\u2013", "-")
-
-    # Collapse 3+ blank lines to 2
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def _parse_qa_pairs(text: str, session_n: int) -> list[dict]:
-    """
-    Parse the full session text into Q&A pairs.
-
-    The Law of One has a very consistent structure:
-      - Numbered questions: "1. Questioner: ..." or just "Questioner: ..."
-      - Ra's answers: "Ra: I am Ra. ..."
-
-    We split on Ra's signature opening "Ra: I am Ra" and pair with
-    the preceding question block.
-    """
-    pairs = []
-
-    # Pattern for a question block (various numbering styles)
-    # Matches: "1." or "1.0" or "RA CONTACT SESSION n" headers before text
-    # Then "Questioner:" (or just the numbered line before Ra speaks)
-
-    # Split on Ra's answer marker
-    ra_marker = re.compile(
-        r"(?m)^(?:Ra:|RA:)\s*I am Ra[.,]?",
-        re.IGNORECASE,
-    )
-
-    segments = ra_marker.split(text)
-
-    if len(segments) < 2:
         return []
 
-    # segments[0] is content before the first Ra answer (session header)
-    # segments[1..] are Ra's answers; the question precedes each
+    # Build speaker turns: [(speaker_label, [p_tags]), ...]
+    # speaker_label is the full text of the h4, e.g. "1.1Questioner" or "Ra"
+    turns: list[tuple[str, list]] = []
+    current_speaker: str | None = None
+    current_ps: list = []
+
+    for el in all_elements:
+        if el.name == "h4" and "speaker" in (el.get("class") or []):
+            if current_speaker is not None:
+                turns.append((current_speaker, current_ps))
+            current_speaker = el.get_text(strip=True)
+            current_ps = []
+        elif el.name == "p" and current_speaker is not None:
+            # Skip editorial notes like "[Two-minute pause.]"
+            if "notes" not in " ".join(el.get("class") or []):
+                current_ps.append(el)
+
+    if current_speaker is not None:
+        turns.append((current_speaker, current_ps))
+
+    # Pair consecutive Questioner → Ra turns
+    pairs = []
     question_counter = 0
 
-    # Work through answer segments
-    for i, answer_text in enumerate(segments[1:], start=1):
-        # The question for this answer is the tail of the previous segment
-        preceding = segments[i - 1]
-
-        # Extract the question: look for "Questioner:" near the end of preceding
-        question = _extract_question(preceding)
-
-        if question is None:
-            # First segment might just be session header — skip
+    for i, (speaker, q_ps) in enumerate(turns):
+        if "questioner" not in speaker.lower():
             continue
 
-        question_counter += 1
-        answer = "I am Ra. " + answer_text.strip()
+        # The next turn should be Ra
+        if i + 1 >= len(turns):
+            continue
+        next_speaker, a_ps = turns[i + 1]
+        if "questioner" in next_speaker.lower():
+            # Two questioner turns in a row — no Ra answer found
+            logger.warning(
+                f"Session {session_n:03d}: Questioner turn '{speaker}' not followed "
+                f"by Ra (got '{next_speaker}'). Skipping."
+            )
+            continue
 
+        question_text = _clean_text(
+            "\n\n".join(p.get_text(separator=" ", strip=True) for p in q_ps)
+        )
+        answer_text = _clean_text(
+            "\n\n".join(p.get_text(separator=" ", strip=True) for p in a_ps)
+        )
+
+        question_counter += 1
         pairs.append(
             {
                 "question_number": question_counter,
-                "question": question.strip(),
-                "answer": answer,
-            }
-        )
-
-    return pairs
-
-
-def _extract_question(text: str) -> str | None:
-    """
-    Extract the question from a block of text that precedes a Ra answer.
-    The question is typically near the end of this block.
-    """
-    # Look for "Questioner:" marker
-    q_match = re.search(r"Questioner:\s*(.+?)$", text, re.IGNORECASE | re.DOTALL)
-    if q_match:
-        # Take text after "Questioner:" — trim trailing whitespace
-        q_text = q_match.group(1).strip()
-        # Remove anything that's clearly not the question (e.g., trailing Ra markers)
-        q_text = re.sub(r"\s*Ra:.*$", "", q_text, flags=re.DOTALL).strip()
-        if q_text:
-            return q_text
-
-    # Fallback: if no "Questioner:" found, take the last non-empty paragraph
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if paragraphs:
-        last = paragraphs[-1]
-        # Skip if it looks like a session header
-        if len(last) > 20 and not re.match(r"^Session\s+\d+", last, re.I):
-            return last
-
-    return None
-
-
-def _parse_qa_pairs_fallback(text: str, session_n: int) -> list[dict]:
-    """
-    Alternative parser for sessions with non-standard formatting.
-    Uses numbered question pattern (e.g. "1.1", "1.2", "2.0") found in
-    early sessions (Books 1–2).
-    """
-    pairs = []
-    # Pattern: "n.m Questioner: ..." followed by "Ra: I am Ra. ..."
-    pattern = re.compile(
-        r"(\d+\.\d+)\s+Questioner:\s+(.*?)(?=\d+\.\d+\s+Ra:|$)",
-        re.DOTALL | re.IGNORECASE,
-    )
-    ra_pattern = re.compile(r"Ra:\s+I am Ra[.,]?\s+(.*?)(?=\d+\.\d+\s+|$)", re.DOTALL)
-
-    for i, match in enumerate(pattern.finditer(text), start=1):
-        question_text = match.group(2).strip()
-
-        # Find corresponding Ra answer immediately following
-        ra_match = ra_pattern.search(text, match.end())
-        answer_text = ra_match.group(1).strip() if ra_match else ""
-
-        pairs.append(
-            {
-                "question_number": i,
                 "question": question_text,
-                "answer": "I am Ra. " + answer_text if answer_text else "",
+                "answer": answer_text,
             }
         )
 
     return pairs
+
+
+def _clean_text(text: str) -> str:
+    """Normalize whitespace and replace Unicode punctuation with ASCII equivalents."""
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2014", "--").replace("\u2013", "-")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
