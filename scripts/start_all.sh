@@ -41,7 +41,7 @@ sleep 2
 # ── 2. Start Next.js UI ────────────────────────────────────────────────────────
 echo "[2/3] Starting Next.js UI on :3000 ..."
 cd "$REPO_ROOT/ui"
-npm run start &
+npm run dev &
 UI_PID=$!
 
 sleep 2
