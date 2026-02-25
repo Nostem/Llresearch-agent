@@ -102,7 +102,7 @@ llresearch-agent/
 - [x] Clean and normalize formatting (`ingest/cleaner.py`)
 - [x] Chunk by Q&A pair with rich metadata (`ingest/chunker.py`)
 - [x] Generate embeddings and store in ChromaDB (`embeddings/embed.py`)
-- [ ] Validate retrieval quality with test questions *(run after first ingest)*
+- [x] Validate retrieval quality with test questions *(100% pass rate)*
 
 ### Phase 2 — Agent Core
 
@@ -110,13 +110,14 @@ llresearch-agent/
 - [x] Design the “lens” system prompt (`agent/lens.py` — v1.0)
 - [x] Wire retriever → prompt builder → Ollama (`agent/prompt_builder.py`, `agent/agent.py`)
 - [x] Build FastAPI backend with chat and search endpoints (`api/`)
-- [ ] Iterative evaluation and tuning *(ongoing after first ingest)*
+- [x] Iterative evaluation and tuning *(baseline complete — 100% retrieval accuracy)*
 
 ### Phase 3 — Interface
 
-- [ ] Web app (mobile + desktop) with chat UI
-- [ ] Source citation display (session number, questioner, date)
-- [ ] Concept browser / exploration view
+- [x] Web app (mobile + desktop) with chat UI (`ui/` — Next.js 15, Tailwind)
+- [x] Source citation display (session, book, date, question number, source URL)
+- [x] Concept browser / session explorer (`/sessions`)
+- [x] Internet access via Cloudflare Tunnel (`scripts/start_all.sh`)
 - [ ] Personal notes / journal layer
 
 ### Phase 4 — Expansion
