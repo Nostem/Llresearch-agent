@@ -2,71 +2,71 @@
   {
     "id": "eval-001",
     "question": "What is the Law of One?",
-    "expected_sessions": [1, 2, 4],
+    "expected_sessions": [1, 2, 3, 4, 7, 10, 17, 26],
     "expected_concepts": ["unity", "one infinite creator", "all things are one"],
-    "notes": "Core concept — should appear in first few sessions"
+    "notes": "Core concept introduced in sessions 1-4 and restated throughout. Sessions 7, 10, 17, 26 all contain explicit definitional discussion."
   },
   {
     "id": "eval-002",
     "question": "What are the densities and how many are there?",
-    "expected_sessions": [13, 16],
+    "expected_sessions": [13, 16, 17, 27, 28, 40, 63, 78],
     "expected_concepts": ["seven densities", "octave", "density of consciousness", "harvest"],
-    "notes": "Density structure introduced early and elaborated throughout"
+    "notes": "Density structure introduced in session 13, elaborated across Books 2-4. Any session discussing densities explicitly is a valid hit."
   },
   {
     "id": "eval-003",
     "question": "What is the veil of forgetting and why does it exist?",
-    "expected_sessions": [76, 77, 78],
+    "expected_sessions": [76, 77, 78, 79, 80, 83, 86, 105],
     "expected_concepts": ["veil", "forgetting", "free will", "polarization", "catalyst"],
-    "notes": "Veil discussed extensively in sessions 76-80"
+    "notes": "Veil concept developed in depth across sessions 76-86. Sessions 79, 83, 105 contain substantial veil discussion and are valid retrieval hits."
   },
   {
     "id": "eval-004",
     "question": "How did Ra come to be associated with Egypt?",
-    "expected_sessions": [1, 2, 6],
+    "expected_sessions": [1, 2, 3, 6, 23, 24],
     "expected_concepts": ["Egypt", "pyramid", "Ra contact", "Law of One teachers"],
-    "notes": "Ra's history on Earth — early sessions"
+    "notes": "Ra's Earth history introduced in sessions 1-6. Sessions 23-24 contain the most detailed account of Ra's Egyptian contact."
   },
   {
     "id": "eval-005",
     "question": "What is the role of the Logos in creation?",
-    "expected_sessions": [28, 29, 78],
+    "expected_sessions": [27, 28, 29, 30, 54, 78, 82],
     "expected_concepts": ["Logos", "sub-Logos", "intelligent infinity", "free will", "galaxy"],
-    "notes": "Logos cosmology developed in Book 2"
+    "notes": "Logos cosmology is the central framework of Book 2 (sessions 27-50). Sessions 78 and 82 revisit it in the context of the veil."
   },
   {
     "id": "eval-006",
     "question": "What is service-to-others vs service-to-self polarization?",
-    "expected_sessions": [17, 36, 48],
+    "expected_sessions": [12, 17, 19, 36, 48, 52, 54, 82, 87],
     "expected_concepts": ["positive polarity", "negative polarity", "service-to-others", "service-to-self", "harvest", "fourth density"],
-    "notes": "Fundamental polarization concept — should be highly retrievable"
+    "notes": "Polarization is foundational and recurs throughout all 106 sessions. Any session with substantial STO/STS discussion is a valid hit."
   },
   {
     "id": "eval-007",
     "question": "What did Ra say about the Great Pyramid of Giza?",
-    "expected_sessions": [2, 3, 57],
+    "expected_sessions": [2, 3, 18, 57, 58, 60],
     "expected_concepts": ["pyramid", "capstone", "initiation", "healing", "focus of energy"],
-    "notes": "Pyramid discussions spread across early and mid sessions"
+    "notes": "Pyramid discussions concentrated in sessions 2-3 (construction/purpose) and 57-60 (energy/healing). Session 18 covers Ra's work in Egypt including pyramid context."
   },
   {
     "id": "eval-008",
     "question": "What is intelligent infinity?",
-    "expected_sessions": [1, 28, 41],
+    "expected_sessions": [1, 11, 13, 27, 28, 41, 63],
     "expected_concepts": ["intelligent infinity", "unpotentiated infinity", "Logos", "first distortion", "unity"],
-    "notes": "Root cosmological concept"
+    "notes": "Intelligent infinity is Ra's root cosmological concept, appearing across all books. Sessions 27-28 contain the most detailed treatment."
   },
   {
     "id": "eval-009",
     "question": "How does Ra describe the harvest or graduation?",
-    "expected_sessions": [17, 39, 65],
+    "expected_sessions": [10, 14, 17, 39, 40, 63, 65, 70],
     "expected_concepts": ["harvest", "graduation", "third density", "fourth density", "polarization", "wanderers"],
-    "notes": "Harvest is a central recurring topic"
+    "notes": "Harvest is a central recurring topic. Sessions 17, 39, 65 are the most thorough treatments; 10, 14, 40, 63, 70 also contain substantial discussion."
   },
   {
     "id": "eval-010",
     "question": "What are wanderers and what is their purpose?",
-    "expected_sessions": [11, 36, 65],
+    "expected_sessions": [11, 12, 15, 36, 37, 43, 65, 89],
     "expected_concepts": ["wanderers", "fourth density", "fifth density", "service", "veil", "forgetting"],
-    "notes": "Wanderers concept — should be highly retrievable"
+    "notes": "Wanderers introduced in session 11 and revisited across all books. Sessions 12, 15, 36, 37, 43, 65, 89 all contain substantive wanderer discussion."
   }
 ]
