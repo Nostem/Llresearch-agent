@@ -16,10 +16,16 @@ Or for a full eval report:
 
 import json
 import logging
+import sys
 from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
+
+# When run directly as `python tests/test_retrieval.py`, Python sets sys.path[0]
+# to the tests/ directory, which means `from agent.retriever import ...` fails.
+# This ensures the project root is always on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 load_dotenv()
 
