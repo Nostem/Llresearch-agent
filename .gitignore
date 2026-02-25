@@ -16,6 +16,11 @@ data/chunks/
 # Vector store — rebuilt from data during ingest
 embeddings/chroma_store/
 
+# UI
+ui/node_modules/
+ui/.next/
+ui/.env.local
+
 # IDE / OS
 .DS_Store
 .idea/
