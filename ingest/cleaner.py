@@ -123,16 +123,26 @@ def extract_qa_pairs_from_html(html: str, session_n: int) -> list[dict]:
     after the question <p> tags — there is no separate Ra speaker <h4>.
     Editorial notes appear as <p class="notes italic">[...]</p> and are skipped.
 
+    Strategy: collect all <h4 class="speaker"> and <p> elements in document
+    order, then walk through them sequentially. This is robust to any nesting
+    of wrapper divs around the <h4> elements.
+
     Returns a list of dicts: [{question_number, question, answer}, ...]
     """
     soup = BeautifulSoup(html, "lxml")
 
-    pairs = []
-    question_counter = 0
+    # Remove chrome that won't contain transcript content
+    for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+        tag.decompose()
 
-    # All speaker markers — <h4 class="speaker"> elements
-    speaker_h4s = soup.find_all("h4", class_="speaker")
+    # Walk ALL h4 and p elements in document order regardless of nesting
+    all_elements = soup.find_all(["h4", "p"])
 
+    # Check we found h4.speaker elements at all
+    speaker_h4s = [
+        el for el in all_elements
+        if el.name == "h4" and "speaker" in (el.get("class") or [])
+    ]
     if not speaker_h4s:
         logger.warning(
             f"Session {session_n:03d}: no <h4 class='speaker'> elements found in HTML. "
@@ -140,25 +150,28 @@ def extract_qa_pairs_from_html(html: str, session_n: int) -> list[dict]:
         )
         return []
 
-    for h4 in speaker_h4s:
-        # Only process Questioner turns — Ra's answers follow as plain <p> tags
+    pairs = []
+    question_counter = 0
+
+    for idx, h4 in enumerate(all_elements):
+        if h4.name != "h4" or "speaker" not in (h4.get("class") or []):
+            continue
+
+        # Only process Questioner turns
         name_span = h4.find("span", class_="name")
         if not name_span:
             continue
         if "questioner" not in name_span.get_text(strip=True).lower():
             continue
 
-        # Collect all <p> siblings after this h4 until the next <h4 class="speaker">
+        # Collect all <p> elements that follow in document order until the
+        # next <h4 class="speaker"> — these are the question + Ra's answer
         content_ps: list = []
-        for sibling in h4.next_siblings:
-            # next_siblings yields NavigableString for whitespace — skip those
-            if not hasattr(sibling, "name") or sibling.name is None:
-                continue
-            # Stop when we hit the next speaker marker
-            if sibling.name == "h4" and "speaker" in (sibling.get("class") or []):
+        for el in all_elements[idx + 1:]:
+            if el.name == "h4" and "speaker" in (el.get("class") or []):
                 break
-            if sibling.name == "p":
-                content_ps.append(sibling)
+            if el.name == "p":
+                content_ps.append(el)
 
         if not content_ps:
             continue
