@@ -106,105 +106,88 @@ def extract_qa_pairs_from_html(html: str, session_n: int) -> list[dict]:
     """
     Parse Q&A pairs from an llresearch.org session HTML page.
 
-    The site uses semantic HTML to mark speaker turns:
-      <h4 class="speaker">
-        <a class="num">1.1</a>
-        <span class="name">Questioner</span>
-      </h4>
-      <p>[question text]</p>
-      <p>I am Ra. [answer text]</p>
-      <h4 class="speaker">
-        <a class="num">1.2</a>
-        <span class="name">Questioner</span>
-      </h4>
-      ...
+    The actual DOM structure (confirmed via debug) is:
+      <article id="fountain">
+        <h4 class="speaker">1.0Ra</h4>      ← Ra's opening monologue
+        <p>...</p> ...
+        <h4 class="speaker">1.1Questioner</h4>
+        <p>[question text]</p>
+        <h4 class="speaker">Ra</h4>          ← Ra's answer gets its own h4
+        <p>I am Ra. [answer text]</p>
+        <h4 class="speaker">1.2Questioner</h4>
+        ...
+      </article>
 
-    Ra's answers appear as <p> tags (starting with "I am Ra.") directly
-    after the question <p> tags — there is no separate Ra speaker <h4>.
-    Editorial notes appear as <p class="notes italic">[...]</p> and are skipped.
-
-    Strategy: collect all <h4 class="speaker"> and <p> elements in document
-    order, then walk through them sequentially. This is robust to any nesting
-    of wrapper divs around the <h4> elements.
+    Strategy:
+      1. Walk all elements in document order, building a list of speaker
+         turns: [(speaker_text, [p_elements]), ...]
+      2. Find consecutive Questioner→Ra turn pairs and combine them.
 
     Returns a list of dicts: [{question_number, question, answer}, ...]
     """
     soup = BeautifulSoup(html, "lxml")
 
-    # Remove chrome that won't contain transcript content
     for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
         tag.decompose()
 
-    # Walk ALL h4 and p elements in document order regardless of nesting
     all_elements = soup.find_all(["h4", "p"])
 
-    # Check we found h4.speaker elements at all
     speaker_h4s = [
         el for el in all_elements
         if el.name == "h4" and "speaker" in (el.get("class") or [])
     ]
     if not speaker_h4s:
         logger.warning(
-            f"Session {session_n:03d}: no <h4 class='speaker'> elements found in HTML. "
-            "The page structure may have changed."
+            f"Session {session_n:03d}: no <h4 class='speaker'> elements found. "
+            "Page structure may have changed."
         )
         return []
 
+    # Build speaker turns: [(speaker_label, [p_tags]), ...]
+    # speaker_label is the full text of the h4, e.g. "1.1Questioner" or "Ra"
+    turns: list[tuple[str, list]] = []
+    current_speaker: str | None = None
+    current_ps: list = []
+
+    for el in all_elements:
+        if el.name == "h4" and "speaker" in (el.get("class") or []):
+            if current_speaker is not None:
+                turns.append((current_speaker, current_ps))
+            current_speaker = el.get_text(strip=True)
+            current_ps = []
+        elif el.name == "p" and current_speaker is not None:
+            # Skip editorial notes like "[Two-minute pause.]"
+            if "notes" not in " ".join(el.get("class") or []):
+                current_ps.append(el)
+
+    if current_speaker is not None:
+        turns.append((current_speaker, current_ps))
+
+    # Pair consecutive Questioner → Ra turns
     pairs = []
     question_counter = 0
 
-    for idx, h4 in enumerate(all_elements):
-        if h4.name != "h4" or "speaker" not in (h4.get("class") or []):
+    for i, (speaker, q_ps) in enumerate(turns):
+        if "questioner" not in speaker.lower():
             continue
 
-        # Only process Questioner turns
-        name_span = h4.find("span", class_="name")
-        if not name_span:
+        # The next turn should be Ra
+        if i + 1 >= len(turns):
             continue
-        if "questioner" not in name_span.get_text(strip=True).lower():
-            continue
-
-        # Collect all <p> elements that follow in document order until the
-        # next <h4 class="speaker"> — these are the question + Ra's answer
-        content_ps: list = []
-        for el in all_elements[idx + 1:]:
-            if el.name == "h4" and "speaker" in (el.get("class") or []):
-                break
-            if el.name == "p":
-                content_ps.append(el)
-
-        if not content_ps:
-            continue
-
-        # Split into question vs. answer.
-        # Question: <p> tags before the first one starting with "I am Ra"
-        # Answer:   <p> tags from "I am Ra" onward
-        # Skip editorial notes (<p class="notes ...">)
-        question_ps: list = []
-        answer_ps: list = []
-        found_ra = False
-
-        for p in content_ps:
-            # Skip bracketed editorial notes like "[Two-minute pause.]"
-            if "notes" in " ".join(p.get("class") or []):
-                continue
-            p_text = p.get_text(strip=True)
-            if not found_ra and p_text.startswith("I am Ra"):
-                found_ra = True
-            if found_ra:
-                answer_ps.append(p)
-            else:
-                question_ps.append(p)
-
-        # Every Questioner turn should have a Ra answer — skip if not
-        if not found_ra:
+        next_speaker, a_ps = turns[i + 1]
+        if "questioner" in next_speaker.lower():
+            # Two questioner turns in a row — no Ra answer found
+            logger.warning(
+                f"Session {session_n:03d}: Questioner turn '{speaker}' not followed "
+                f"by Ra (got '{next_speaker}'). Skipping."
+            )
             continue
 
         question_text = _clean_text(
-            "\n\n".join(p.get_text(separator=" ", strip=True) for p in question_ps)
+            "\n\n".join(p.get_text(separator=" ", strip=True) for p in q_ps)
         )
         answer_text = _clean_text(
-            "\n\n".join(p.get_text(separator=" ", strip=True) for p in answer_ps)
+            "\n\n".join(p.get_text(separator=" ", strip=True) for p in a_ps)
         )
 
         question_counter += 1
