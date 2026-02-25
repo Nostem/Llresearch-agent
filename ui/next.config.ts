@@ -3,6 +3,9 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   // FASTAPI_URL is read by API proxy routes at runtime via process.env
   // Set it in .env.local — defaults to localhost:8000
+
+  // Allow Cloudflare quick-tunnel domains to make dev requests without warnings
+  allowedDevOrigins: ['*.trycloudflare.com'],
 }
 
 export default nextConfig
