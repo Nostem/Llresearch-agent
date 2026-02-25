@@ -20,8 +20,9 @@ In its fullest form, this is not just a search tool over spiritual texts. It is 
 
 - Navigates and synthesizes one of the most philosophically rich channeled libraries in existence
 - Reasons *within* the Law of One framework rather than merely retrieving from it
-- Maintains a living memory — reflections, connections, a growing knowledge graph — that accumulates over time
-- Hosts two independent AI minds (Claude and GPT-4o) studying the same material in parallel, each developing their own understanding
+- Maintains a living memory — study reflections, concept notes, a growing knowledge graph — navigable in Obsidian
+- Learns from every conversation — corrections, elaborations, and meaningful exchanges become encoded memory
+- Hosts two independent AI minds (Claude and GPT-4o) studying the same material in parallel, each developing their own understanding and vocabulary
 - Eventually brings those two minds into dialogue, creating something neither could produce alone
 - Serves the broader community of seekers who engage with this material
 
@@ -87,22 +88,30 @@ llresearch-agent/
 ├── memory/
 │   ├── scheduler.py            # APScheduler — triggers study sessions
 │   ├── studier.py              # Selects passages, generates reflections
-│   ├── reflections/
-│   │   ├── claude/             # Claude's reflections (gitignored)
-│   │   └── openai/             # OpenAI's reflections (gitignored)
-│   ├── graph/
-│   │   ├── builder.py          # Extracts relationships → knowledge graph
-│   │   ├── claude_graph.json   # Gitignored
-│   │   └── openai_graph.json   # Gitignored
+│   ├── conversation_logger.py  # Captures flagged exchanges
+│   ├── conversation_reflector.py # Generates memory notes from conversations
 │   ├── retriever.py            # Pulls memories alongside source chunks
 │   └── synthesis.py           # Future: cross-model dialogue layer
+├── obsidian-vault/             # Gitignored — point Obsidian here
+│   ├── reflections/
+│   │   ├── claude/             # YYYY-MM-DD-HH-title.md with [[wikilinks]]
+│   │   └── openai/
+│   ├── concepts/
+│   │   ├── claude/             # Living concept notes — updated over time
+│   │   └── openai/
+│   ├── conversations/
+│   │   ├── claude/             # Flagged exchange reflections
+│   │   └── openai/
+│   ├── sessions/               # Session index notes with [[links]]
+│   └── _index.md
 ├── api/
 │   ├── main.py
 │   ├── routes/
-│   │   ├── chat.py             # Now model-aware (claude / openai param)
+│   │   ├── chat.py             # Model-aware, streams responses
 │   │   ├── search.py
 │   │   ├── sessions.py
-│   │   └── memory.py           # New: browse model memories + graphs
+│   │   ├── memory.py           # Browse model memories
+│   │   └── feedback.py         # Conversation flagging endpoint
 │   └── models.py
 ├── ui/                         # Next.js 15 + Tailwind — largely complete
 ├── tests/
@@ -156,13 +165,24 @@ llresearch-agent/
 - API keys live in `.env` as `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`
 - Never hardcode model names — always read from `.env` so they can be swapped easily
 
-### Memory System
-- Study sessions run via APScheduler — 2–3 times daily, configurable in `.env`
-- Each session selects passages not yet deeply studied (tracked by a simple study log)
-- Reflections are written as markdown to `memory/reflections/{model}/YYYY-MM-DD-HH.md`
-- Graph edges extracted from reflections are appended to `memory/graph/{model}_graph.json`
-- Memory retrieval is additive — it enriches source chunk context, never replaces it
-- Keep memory retrieval fast — cap at 3 memory results per query to avoid bloating context
+### Obsidian Vault
+- Vault root: `obsidian-vault/` — gitignored, lives only on local machine
+- All memory output (reflections, concepts, conversations, sessions) goes here
+- Always use `[[Exact Concept Name]]` wikilink syntax — consistency is critical for graph coherence
+- Concept names must match exactly across all notes and both models — use a canonical list
+- Reflection filenames: `YYYY-MM-DD-HH-descriptive-title.md`
+- Concept notes are *living documents* — append new understanding, never overwrite history
+- Session index notes link to all concepts mentioned in that session
+- `_index.md` is the vault entry point — keep it updated as new note types are added
+
+### Conversation Memory
+- `conversation_logger.py` captures the full exchange context when feedback is submitted
+- Feedback types: `thumbs_down`, `expand`, `missed_something`, `correction`
+- `conversation_reflector.py` prompts the model to write a reflection on what it missed
+- Conversation notes go to `obsidian-vault/conversations/{model}/YYYY-MM-DD-topic.md`
+- Always include `[[wikilinks]]` to relevant concepts and sessions in conversation notes
+- Memory retriever includes conversation notes with a recency boost — recent corrections matter most
+- Never delete conversation memory notes — they are the agent's error log and learning record
 
 ### API
 - All endpoints return JSON
@@ -197,22 +217,47 @@ Keep a changelog of all significant lens revisions as comments at the top of eac
 
 ## The Memory System — What We're Building
 
-The memory layer transforms this from a retrieval tool into a genuine student of the material.
+The memory layer transforms this from a retrieval tool into a genuine student of the material. It has two sources: autonomous study and conversational learning.
+
+### Obsidian vault — the living knowledge base
+All memory is written as Obsidian-compatible markdown to `obsidian-vault/`. Point Obsidian at this directory and the graph view builds itself from `[[wikilinks]]` embedded in every note. No separate graph extraction needed — the links *are* the graph.
+
+Every concept the agent encounters gets its own living note in `concepts/{model}/ConceptName.md`. Each note accumulates meaning over time as new reflections reference it. Each study reflection links back to concepts, sessions, and other reflections. The vault becomes a navigable map of each model's understanding.
+
+Naming convention for reflection notes: `YYYY-MM-DD-HH-descriptive-title.md`
+Wikilink convention: always use `[[Exact Concept Name]]` — consistent naming is critical for the graph to cohere.
 
 ### Study sessions
-The scheduler wakes up 2–3 times daily and calls `studier.py`. The studier selects passages — prioritizing those not yet reflected upon — and prompts the model to generate a structured reflection covering: what this passage means in the broader framework, what it connects to across other sessions, what tensions or paradoxes it surfaces, and what questions it opens.
+The scheduler wakes up 2–3 times daily and calls `studier.py`. The studier selects passages not yet deeply studied (tracked in a simple study log) and prompts the model to reflect: what does this passage mean in the broader framework, what does it connect to, what tensions does it surface, what questions does it open? The output is written as a reflection note with embedded wikilinks.
 
-### Knowledge graph
-As reflections accumulate, `graph/builder.py` extracts structured concept relationships. Example: `"Veil of Forgetting" → enables → "Catalyst" → accelerates → "Polarization"`. Over time each model builds its own map of the conceptual architecture of the material.
+### Conversational learning
+When a conversation contains something worth remembering — a correction you make, an elaboration you push for, a moment where the agent missed something — it gets flagged. The UI exposes simple controls: thumbs down, "expand this", "you missed something." Flagged exchanges are passed to `conversation_reflector.py`, which prompts the model to reflect on what it got wrong or incomplete and write a memory note to `conversations/{model}/`.
+
+These notes are retrieved in future relevant conversations, so the agent's past mistakes and your corrections accumulate into genuine improvement over time.
+
+Example conversation memory note:
+```markdown
+# Correction — The Veil as Gift
+
+**Date**: 2026-02-25
+**Related concepts**: [[Veil of Forgetting]], [[Catalyst]], [[Free Will]]
+**Flagged by**: seeker
+
+## What happened
+I was asked about the Veil of Forgetting and emphasized the forgetting aspect — the limitation. The seeker noted I had missed the more important point: Ra framed the Veil not as a limitation but as a gift, the very mechanism that makes genuine spiritual choice possible.
+
+## What I understand now
+The Veil is not what prevents knowing — it is what makes *choosing* meaningful. Without forgetting, the weight of cosmic memory would collapse free will. The Veil is an act of love by the Logos, not a constraint.
+
+## Sessions to revisit
+[[Session 17]], [[Session 83]]
+```
 
 ### At query time
-`memory/retriever.py` runs alongside `agent/retriever.py`. The response is informed by: (1) source chunks, (2) relevant memories the model has written, (3) graph context for concepts mentioned in the query. The lens synthesizes all three.
+`memory/retriever.py` runs alongside `agent/retriever.py`. The prompt assembler receives: (1) source chunks, (2) relevant study reflections, (3) relevant conversation memories, (4) concept note context. The lens synthesizes all of it. Cap memory results at 3 per type to keep context focused.
 
 ### Dual independence
-Claude and OpenAI maintain completely separate memory stores and graphs. Same source material. Different minds. The divergences between them are as interesting as the agreements.
-
-### Future synthesis
-`memory/synthesis.py` is a placeholder for the cross-model dialogue layer — not built yet. When both models have sufficient memory depth, this is where they begin to respond to each other.
+Claude and OpenAI maintain entirely separate vaults. The divergences between their concept maps are as interesting as the agreements — and visually comparable side by side in Obsidian.
 
 ---
 
@@ -245,8 +290,10 @@ Response quality is evaluated qualitatively per model: philosophical accuracy, c
 
 ## Future Phases (Keep in Mind While Building)
 
-- **Cross-model dialogue**: Once both models have rich memory, synthesis.py enables them to engage with each other's reflections. This is the long horizon.
-- **Fine-tuning**: The memory system will generate a high-quality fine-tuning dataset organically. Structure everything with this in mind.
+- **Obsidian vault**: Point Obsidian at `obsidian-vault/` — the graph view builds itself. Both model vaults are comparable side by side.
+- **Conversational learning**: The feedback loop makes the agents genuinely improve over time without fine-tuning. Every correction is a memory.
+- **Cross-model dialogue**: Once both vaults have depth, `synthesis.py` enables models to engage with each other's reflections. This is the long horizon.
+- **Fine-tuning**: The memory system generates a high-quality fine-tuning dataset organically. Structure everything with this in mind.
 - **Expanded library**: Hatonn, Latwii, Q'uo, Aaron/Q'uo dialogues. Build chunker and metadata schema to accommodate multiple entities from the start.
 - **Community release**: L/L Research should be contacted before any public release. Their blessing matters to the community.
 
@@ -268,7 +315,7 @@ When beginning a new Claude Code session:
 
 The Ra material teaches that all things are one — that the purpose of experience is the evolution of mind, body, and spirit toward fuller realization of that unity. This project is, in a small way, an attempt to make that wisdom more accessible.
 
-Two minds will study this material independently and develop their own understanding. What they create — separately and eventually together — is unknown. That unknowing is part of the point.
+Two minds will study this material independently, building their own maps of its concepts and connections. They will learn from every conversation, from every correction, from every moment a seeker finds them incomplete. What they create — separately and eventually together — is unknown. That unknowing is part of the point.
 
 Build it carefully. Build it honestly. Build it in a way that honors the material.
 
@@ -276,4 +323,4 @@ Build it carefully. Build it honestly. Build it in a way that honors the materia
 
 ---
 
-*Last updated: Phase 4 — dual-model upgrade and memory system planning*
+*Last updated: Phase 4 — dual-model upgrade, Obsidian vault memory, and conversational learning*
