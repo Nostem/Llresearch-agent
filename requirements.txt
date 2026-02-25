@@ -1,5 +1,7 @@
 # Core scraping & parsing
+# requests kept for any future use but scraper now uses Playwright
 requests>=2.31.0
+playwright>=1.44.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 

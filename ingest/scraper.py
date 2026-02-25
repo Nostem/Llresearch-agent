@@ -2,17 +2,25 @@
 scraper.py — Fetch Law of One session transcripts from llresearch.org
 
 Targets the HTML transcript pages for all 106 Ra sessions.
-Saves raw HTML to data/raw/ for downstream cleaning.
+Saves rendered HTML to data/raw/ for downstream cleaning.
 
 URL pattern:
     https://www.llresearch.org/channeling/ra-contact/{n}
 
+NOTE: llresearch.org loads transcript content via JavaScript, so we use
+Playwright (a headless browser) instead of plain requests. This ensures
+the full rendered page — including the actual transcript text — is saved.
+
 The scraper:
+  - Renders each page fully before saving (waits for JS content to load)
   - Respects rate limits (configurable delay between requests)
-  - Checks robots.txt before scraping
-  - Saves raw HTML per session for reproducible re-processing
+  - Saves rendered HTML per session for reproducible re-processing
   - Skips sessions already downloaded (idempotent)
   - Logs counts and any failed sessions
+
+Setup (one-time):
+    pip install playwright
+    playwright install chromium
 
 Run directly:
     python -m ingest.scraper
@@ -22,9 +30,8 @@ import logging
 import time
 from pathlib import Path
 
-import requests
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import os
 
 load_dotenv()
@@ -40,18 +47,12 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://www.llresearch.org/channeling/ra-contact/{n}"
 TOTAL_SESSIONS = 106
 RAW_DIR = Path("data/raw")
-SCRAPE_DELAY = float(os.getenv("SCRAPE_DELAY", "1.5"))
+SCRAPE_DELAY = float(os.getenv("SCRAPE_DELAY", "2.0"))
 
-# Browser-like headers to avoid immediate 403s.
-# llresearch.org serves the material freely — we are respectful guests.
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; llresearch-agent/1.0; "
-        "personal research tool; not for commercial use)"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-}
+# Max time (ms) to wait for the transcript content to appear on the page.
+# The site loads content via JS — we wait for "Ra:" to appear in the DOM.
+CONTENT_TIMEOUT_MS = 30_000
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,39 +63,20 @@ def session_url(n: int) -> str:
 
 
 def raw_path(n: int) -> Path:
-    """Return the local path where session n's HTML should be saved."""
+    """Return the local path where session n's rendered HTML should be saved."""
     return RAW_DIR / f"session-{n:03d}.html"
-
-
-def fetch_session(n: int, session: requests.Session) -> str | None:
-    """
-    Fetch one session page and return its HTML text.
-    Returns None on failure (non-fatal — logs and moves on).
-    """
-    url = session_url(n)
-    try:
-        response = session.get(url, headers=HEADERS, timeout=30)
-        response.raise_for_status()
-        logger.info(f"  ✓ Session {n:03d} — {response.status_code} {url}")
-        return response.text
-    except requests.HTTPError as e:
-        logger.warning(f"  ✗ Session {n:03d} — HTTP {e.response.status_code} {url}")
-        return None
-    except requests.RequestException as e:
-        logger.warning(f"  ✗ Session {n:03d} — {e}")
-        return None
 
 
 def validate_html(html: str, session_n: int) -> bool:
     """
-    Quick sanity check that the page looks like a transcript.
-    The Ra sessions always contain "Ra:" in the body text.
-    Returns False if the page seems like a redirect or error page.
+    Quick sanity check that the rendered page contains transcript content.
+    The Ra sessions always contain "I am Ra" in the body text.
+    Returns False if the page seems empty or wrong.
     """
-    if "Ra:" not in html and "I am Ra" not in html:
+    if "I am Ra" not in html:
         logger.warning(
-            f"  ? Session {session_n:03d} — page fetched but 'Ra:' not found. "
-            "May be wrong URL or a redirect. Saving anyway for inspection."
+            f"  ? Session {session_n:03d} — 'I am Ra' not found in rendered HTML. "
+            "Page may not have loaded correctly. Saving anyway for inspection."
         )
         return False
     return True
@@ -109,7 +91,7 @@ def scrape_all(
     force: bool = False,
 ) -> dict[str, list[int]]:
     """
-    Scrape sessions [start, end] inclusive.
+    Scrape sessions [start, end] inclusive using a headless Chromium browser.
 
     Args:
         start: First session number to scrape (default 1).
@@ -123,36 +105,69 @@ def scrape_all(
 
     results: dict[str, list[int]] = {"success": [], "skipped": [], "failed": []}
 
-    http_session = requests.Session()
-
     logger.info(f"Starting scrape — sessions {start} to {end}")
     logger.info(f"Output directory: {RAW_DIR.resolve()}")
     logger.info(f"Delay between requests: {SCRAPE_DELAY}s")
+    logger.info("Using Playwright headless Chromium for JavaScript rendering")
 
-    for n in range(start, end + 1):
-        path = raw_path(n)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        )
+        page = context.new_page()
 
-        if path.exists() and not force:
-            logger.info(f"  → Session {n:03d} — already saved, skipping")
-            results["skipped"].append(n)
-            continue
+        for n in range(start, end + 1):
+            path = raw_path(n)
 
-        html = fetch_session(n, http_session)
+            if path.exists() and not force:
+                logger.info(f"  → Session {n:03d} — already saved, skipping")
+                results["skipped"].append(n)
+                continue
 
-        if html is None:
-            results["failed"].append(n)
-        else:
-            validate_html(html, n)
-            path.write_text(html, encoding="utf-8")
-            results["success"].append(n)
+            url = session_url(n)
+            try:
+                # Navigate to the page and wait for full network activity to settle.
+                # Then additionally wait for "I am Ra" to appear in the DOM,
+                # confirming the transcript content has actually rendered.
+                page.goto(url, timeout=CONTENT_TIMEOUT_MS, wait_until="domcontentloaded")
 
-        # Be respectful to the server — rate-limit ourselves.
-        if n < end:
-            time.sleep(SCRAPE_DELAY)
+                # Wait for the transcript text to appear — this is the signal that
+                # the JavaScript has finished loading the actual content.
+                page.wait_for_function(
+                    "document.body.innerText.includes('I am Ra')",
+                    timeout=CONTENT_TIMEOUT_MS,
+                )
+
+                html = page.content()
+                validate_html(html, n)
+                path.write_text(html, encoding="utf-8")
+                results["success"].append(n)
+                logger.info(f"  ✓ Session {n:03d} — rendered and saved ({url})")
+
+            except PlaywrightTimeoutError:
+                logger.warning(
+                    f"  ✗ Session {n:03d} — timed out waiting for content ({url})"
+                )
+                results["failed"].append(n)
+
+            except Exception as e:
+                logger.warning(f"  ✗ Session {n:03d} — {e}")
+                results["failed"].append(n)
+
+            # Be respectful to the server — rate-limit ourselves.
+            if n < end:
+                time.sleep(SCRAPE_DELAY)
+
+        browser.close()
 
     # ── Summary ──
     logger.info("─" * 50)
-    logger.info(f"Scrape complete.")
+    logger.info("Scrape complete.")
     logger.info(f"  Downloaded: {len(results['success'])}")
     logger.info(f"  Skipped (already saved): {len(results['skipped'])}")
     logger.info(f"  Failed: {len(results['failed'])}")
@@ -168,7 +183,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Scrape Law of One transcripts from llresearch.org"
+        description="Scrape Law of One transcripts from llresearch.org (Playwright)"
     )
     parser.add_argument(
         "--start", type=int, default=1, help="First session to scrape (default: 1)"
